@@ -3,6 +3,9 @@ import PIL
 import numpy as np
 import math
 import random
+import csv
+import os
+
 
 
 # Load the dataset
@@ -111,6 +114,38 @@ class Network():
             layer.CalcNextActivations()
 
         return self.outputLayer.activations
+    
+
+    def SaveNetwork(self, folderPath: str = "Models/", fileName: str = "model"):
+        """Saves this network to a folder.""" 
+
+        if not os.path.exists(folderPath):
+            os.makedirs(folderPath)
+
+        with open(folderPath + fileName + ".csv", mode='w') as file:
+            writer = csv.writer(file)
+
+            writer.writerow(["activations"])
+            writer.writerow(["layerIndex","nodeIndex","activation"])    
+            # write the activations
+            for layerIndex,layer in enumerate(self.nodeLayers):
+                for nodeIndex,activation in enumerate(layer.activations):
+                    writer.writerow([layerIndex,nodeIndex,activation])
+
+            writer.writerow(["biases"])
+            writer.writerow(["layerIndex","nodeIndex","bias"])
+            # write the biases
+            for layerIndex,layer in enumerate(self.nodeLayers[:-1]):
+                for nodeIndex,bias in enumerate(layer.biases):
+                    writer.writerow([layerIndex,nodeIndex,bias])
+            
+            writer.writerow(["weights"])
+            writer.writerow(["layerIndex","rowIndex","columnIndex","weight"])
+            # write the weights
+            for layerIndex,layer in enumerate(self.nodeLayers[:-1]):
+                for weightRowIndex, weightRow in enumerate(layer.weights):
+                    for weightColumnIndex, weight in enumerate(weightRow):
+                        writer.writerow([layerIndex,weightRowIndex,weightColumnIndex,weight])  
 
 
     def __str__(self) -> str:
@@ -119,18 +154,10 @@ class Network():
             s += "LAYER NUMBER: " + str(index) + "\n"
             s += str(layer) + "\n"
         return s
-    
+
 
 n = Network([2,2,2])
 n.RunNetwork(np.array([3,5]))
 print(n)
-
-
-        
-
-        
-        
-
-
-
+n.SaveNetwork()
 
