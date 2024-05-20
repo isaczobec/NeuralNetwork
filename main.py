@@ -39,7 +39,12 @@ class NodeLayer():
         for nextNodes in range(nextNodeLayer.numberOfNodes):
             weightRow = []
             for node in range(numberOfNodes):
-                weightRow.append(random.random()) # generate random weight
+
+                if initializeWeightsRandomly:
+                    weightRow.append(random.random()) # generate random weight
+                else:
+                    weightRow.append(0) # initialize to 0 if not random
+
             weightList.append(weightRow)
 
         self.weights = np.array(weightList)
@@ -48,7 +53,10 @@ class NodeLayer():
         # initialize the biases
         biasList = []
         for node in range(nextNodeLayer.numberOfNodes):
-            biasList.append(random.random())
+            if initializeWeightsRandomly:
+                biasList.append(random.random()) # generate random bias
+            else:
+                biasList.append(0) # initialize to 0 if not random
 
         self.biases = np.array(biasList)
         """A vector containing all the biases for this layer of nodes."""
@@ -89,7 +97,8 @@ class Network():
     2 input nodes, 5 nodes in the only hidden layer, and 2 output nodes) 
     in each layer and creates a neural network."""
     def __init__(self,
-                 LayerAndNodeList: list[int]
+                 LayerAndNodeList: list[int],
+                 initializeWeightsRandomly = True, # whether or not to initialize weights randomly
                  ) -> None:
         
         self.nodeLayers: list[NodeLayer] = []
@@ -100,7 +109,7 @@ class Network():
         self.nodeLayers.append(self.outputLayer)
 
         while len(LayerAndNodeList) > 0:
-            self.nodeLayers.insert(0,NodeLayer(LayerAndNodeList.pop(-1), self.nodeLayers[0]))
+            self.nodeLayers.insert(0,NodeLayer(LayerAndNodeList.pop(-1), self.nodeLayers[0], initializeWeightsRandomly = initializeWeightsRandomly))
 
 
 
@@ -125,6 +134,12 @@ class Network():
         with open(folderPath + fileName + ".csv", mode='w') as file:
             writer = csv.writer(file)
 
+            # write the number of nodes in each layer
+            writer.writerow(["layerIndex","numberOfNodes"])
+            for index,layer in enumerate(self.nodeLayers):
+                writer.writerow([index,layer.numberOfNodes])
+
+
             writer.writerow(["activations"])
             writer.writerow(["layerIndex","nodeIndex","activation"])    
             # write the activations
@@ -145,7 +160,8 @@ class Network():
             for layerIndex,layer in enumerate(self.nodeLayers[:-1]):
                 for weightRowIndex, weightRow in enumerate(layer.weights):
                     for weightColumnIndex, weight in enumerate(weightRow):
-                        writer.writerow([layerIndex,weightRowIndex,weightColumnIndex,weight])  
+                        writer.writerow([layerIndex,weightRowIndex,weightColumnIndex,weight])
+
 
 
     def __str__(self) -> str:
@@ -156,8 +172,118 @@ class Network():
         return s
 
 
-n = Network([2,2,2])
-n.RunNetwork(np.array([3,5]))
-print(n)
-n.SaveNetwork()
+def LoadNetwork( 
+                path: str = "Models/model.csv", # the path to the folder containing the network
+                skippedHeaders: list[str] = ["activations","biases","weights","layerIndex"] # the default headers for the csv file, excluding the layerIndex and numberOfNodes headers
+                ): 
+    """
+    Loads and returns a network from a folder. In the .csv file, activations come first, then biases, then weights.
+    
+    A network is represented in a .csv file as follows:
+    
+    layerIndex,numberOfNodes
+    
+    activations
+    layerIndex,nodeIndex,activation
+    
+    biases
+    layerIndex,nodeIndex,bias
+    
+    weights
+    layerIndex,rowIndex,columnIndex,weight
+    """
+    infoList = [[],[],[],[]]
+    # add the rows to a normal list
+    with open(path, mode="r") as file:
+        reader = csv.reader(file)
+
+        counter = -1
+        justSkipped = False
+        for index,row in enumerate(reader):
+
+            if index % 2 != 0: continue # skip every other row, they are empty
+            if row[0] in skippedHeaders: 
+                justSkipped = True
+                continue # skip the default headers
+
+            if justSkipped:
+                counter+=1
+
+            infoList[counter].append(row)
+            justSkipped = False
+
+
+    activations = []
+    biases = []
+    weights = []
+
+
+    for i,row in enumerate(infoList[0]):
+
+
+
+        # create empty lists for the activations, biases, and weights 
+        activations.append([None]*int(row[1])) # add a new layer to the activations list
+
+    
+        if (i == len(infoList[0])-1): break
+        biases.append([None]*int(infoList[0][i+1][1]))
+        weights.append([[None]*int(infoList[0][i][1]) for _ in range(int(infoList[0][i+1][1]))])
+
+
+
+    # fill the activations
+
+
+    for row in infoList[1]:
+            
+        activations[int(row[0])][int(row[1])] = float(row[2])
+
+    # fill the biases
+    for row in infoList[2]:
+        biases[int(row[0])][int(row[1])] = float(row[2])
+
+
+    print("infolist 3:")
+    print(infoList[3])
+
+    # fill the weights
+    for row in infoList[3]:
+        weights[int(row[0])][int(row[1])][int(row[2])] = float(row[3])
+
+
+
+    # create the network
+    n = Network([int(row[1]) for row in infoList[0]],initializeWeightsRandomly = False)
+    for nodeLayerIndex,nodeLayer in enumerate(n.nodeLayers):
+        nodeLayer.activations = np.array(activations[nodeLayerIndex])
+        if nodeLayerIndex == len(n.nodeLayers)-1: break
+        nodeLayer.biases = np.array(biases[nodeLayerIndex])
+        nodeLayer.weights = np.array(weights[nodeLayerIndex])
+
+    return n
+
+        
+            
+
+
+
+
+
+
+
+                
+
+
+            
+
+
+
+
+LoadNetwork()
+# n = Network([2,5,2])
+# n.RunNetwork(np.array([3,5]))
+# print(n)
+# n.SaveNetwork()
+
 
