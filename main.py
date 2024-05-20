@@ -5,7 +5,7 @@ import math
 import random
 import csv
 import os
-
+import functions
 
 
 # Load the dataset
@@ -41,7 +41,7 @@ class NodeLayer():
             for node in range(numberOfNodes):
 
                 if initializeWeightsRandomly:
-                    weightRow.append(random.random()) # generate random weight
+                    weightRow.append(random.random() * 2 -1) # generate random weight
                 else:
                     weightRow.append(0) # initialize to 0 if not random
 
@@ -54,7 +54,7 @@ class NodeLayer():
         biasList = []
         for node in range(nextNodeLayer.numberOfNodes):
             if initializeWeightsRandomly:
-                biasList.append(random.random()) # generate random bias
+                biasList.append(random.random() * 2 - 1) # generate random bias
             else:
                 biasList.append(0) # initialize to 0 if not random
 
@@ -64,9 +64,35 @@ class NodeLayer():
     def CalcNextActivations(self):
         """Calculate and set the activations of the next layer of nodes."""
 
+        activations = self.CalculateActivationRaw()
+        activations = self.ApplySquishingFunction(activations, lambda x: 1/(1+math.exp(-x))) #apply the sigmoid function to the activations
+        self.nextNodeLayer.activations = activations # set the activations of the next layer to the calculated activations
+
+        print("activations:" + str(activations))
+
+    # functions to calculate the activations of the next layer of nodes:
+
+    def CalculateActivationRaw(self) -> np.ndarray:
+        """Calculate and return the activations of the next layer of nodes by multiplying the weights by the activations of this layer and adding the biases. DOES NOT apply a squishing function."""
         activations = (self.weights @ self.activations) + self.biases
 
-        self.nextNodeLayer.activations = activations
+        return activations
+
+    def ApplySquishingFunction(self, 
+                               activations: np.ndarray, 
+                               function: callable
+                               ) -> np.ndarray:
+        """Apply a squishing function a vector of activations, and return the result."""
+
+        newActivations = np.zeros(len(activations))
+
+        for i,activation in enumerate(activations):
+            newActivations[i] = function(activation)
+
+        return newActivations
+
+
+
 
         
 
@@ -123,6 +149,11 @@ class Network():
             layer.CalcNextActivations()
 
         return self.outputLayer.activations
+    
+
+    def CalculateCost(self, desiredOutput: np.ndarray) -> float:
+        """Calculates the cost of the network given a desired output vector."""
+        return functions.cost(desiredOutput, self.outputLayer.activations)
     
 
     def SaveNetwork(self, folderPath: str = "Models/", fileName: str = "model"):
@@ -244,8 +275,6 @@ def LoadNetwork(
         biases[int(row[0])][int(row[1])] = float(row[2])
 
 
-    print("infolist 3:")
-    print(infoList[3])
 
     # fill the weights
     for row in infoList[3]:
@@ -280,10 +309,11 @@ def LoadNetwork(
 
 
 
-LoadNetwork()
-# n = Network([2,5,2])
-# n.RunNetwork(np.array([3,5]))
-# print(n)
+n = LoadNetwork()
+# n = Network([2,3,2])
+n.RunNetwork(np.array([3,5]))
+print(n)
+print(n.CalculateCost(np.array([1,1])))
 # n.SaveNetwork()
 
 
