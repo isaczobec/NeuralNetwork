@@ -8,12 +8,7 @@ import os
 import functions
 
 
-# Load the dataset
-# dataset = datasets.load_dataset("mnist")
 
-# image = dataset['train']['image'][0]
-# image_array = np.array(image)
-# print(image_array)
 
     
 
@@ -29,10 +24,22 @@ class NodeLayer():
         
         self.numberOfNodes = numberOfNodes
         self.nextNodeLayer = nextNodeLayer
+
+        self.zValues = np.zeros(numberOfNodes)
+        """a vector containing the z values of this layer of nodes.z = (weights @ activations) + biases"""
+
+        self.zDerivatives = np.zeros(numberOfNodes)
+        """A vector containing the derivative of the cost function with respect to the z values of this layer of nodes."""
                 
         # iniialize the activations
         self.activations = np.zeros(numberOfNodes)
         """A vector containing all the activations in this layer of nodes."""
+
+        self.squishingFunction: callable = functions.Sigmoid
+        """The function used to squish the activations of this layer of nodes."""
+
+        self.squishingFunctionDerivative: callable = functions.SigmoidDerivative
+        """The derivative of the squishing function used to squish the activations of this layer of nodes."""
         
         # initialize the weights
         weightList = []
@@ -64,11 +71,11 @@ class NodeLayer():
     def CalcNextActivations(self):
         """Calculate and set the activations of the next layer of nodes."""
 
-        activations = self.CalculateActivationRaw()
-        activations = self.ApplySquishingFunction(activations, lambda x: 1/(1+math.exp(-x))) #apply the sigmoid function to the activations
+        self.nextNodeLayer.zValues = self.CalculateActivationRaw()
+        activations = self.ApplySquishingFunction(self.nextNodeLayer.zValues, self.squishingFunction) #apply the sigmoid function to the activations
         self.nextNodeLayer.activations = activations # set the activations of the next layer to the calculated activations
 
-        print("activations:" + str(activations))
+        # print("activations:" + str(activations))
 
     # functions to calculate the activations of the next layer of nodes:
 
@@ -90,16 +97,21 @@ class NodeLayer():
             newActivations[i] = function(activation)
 
         return newActivations
+    
+    def CalculateZDerivatives(self):
+        """calculates and stores the derivative of the cost function with respect to the z values of the next layer of nodes."""
+        for ia,a in enumerate(self.activations):
+            derivativeSum = 0
+            for iz,dz in enumerate(self.nextNodeLayer.zDerivatives):
+                derivativeSum += dz * self.weights[iz][ia]
 
-
+            derivativeSum *= self.squishingFunctionDerivative(self.zValues[ia])
+            self.zDerivatives[ia] = derivativeSum
 
 
         
-
-        
-
     def __str__(self) -> str:
-        return "node activations:" + "\n" + f"{self.activations}" + "\n" + "node Weights:" + "\n" + f"{self.weights}" + "\n" + "node Biases:" + "\n" + f"{self.biases}"
+        return "node activations:" + "\n" + f"{self.activations}" + "\n" + "node Weights:" + "\n" + f"{self.weights}" + "\n" + "node Biases:" + "\n" + f"{self.biases}"+ "\n" + "node zDerivatives:" + f"{self.zDerivatives}"
 
 
 
@@ -113,8 +125,25 @@ class OutputNodeLayer(NodeLayer):
         self.numberOfNodes = numberOfNodes
         self.activations = np.zeros(numberOfNodes)
 
+        self.zValues = np.zeros(numberOfNodes)
+        """a vector containing the z values of this layer of nodes.z = (weights @ activations) + biases"""
+
+        self.zDerivatives = np.zeros(numberOfNodes)
+        """A vector containing the derivative of the cost function with respect to the z values of this layer of nodes."""
+
+        self.squishingFunctionDerivative: callable = functions.SigmoidDerivative
+        """The derivative of the squishing function used to squish the activations of this layer of nodes."""
+
     def __str__(self) -> str:
-        return "Output Node Layer" + "\n" + "node activations:" + "\n" + f"{self.activations}"
+        return "Output Node Layer" + "\n" + "node activations:" + "\n" + f"{self.activations}" + "\n" + "node zDerivatives:" + f"{self.zDerivatives}"
+    
+    def CalculateZDerivatives(self, desiredResult: np.ndarray):
+        """calculates and stores the derivative of the cost function with respect to the z values of this layer of nodes."""
+        dCdA = functions.costDerivative(desiredResult, self.activations)
+        for i,c in enumerate(self.zDerivatives):
+            self.zDerivatives[i] = dCdA[i] * self.squishingFunctionDerivative(self.zValues[i])
+
+    
 
 
 
@@ -155,6 +184,116 @@ class Network():
         """Calculates the cost of the network given a desired output vector."""
         return functions.cost(desiredOutput, self.outputLayer.activations)
     
+    def CalculateAllZDerivatives(self, desiredOutput: np.ndarray):
+        """Calculates and stores the z derivatives of all the layers in the network."""
+        self.outputLayer.CalculateZDerivatives(desiredOutput)
+        for layer in self.nodeLayers[:-1]:
+            layer.CalculateZDerivatives()
+            # if layer.zDerivatives[0] == 0: print("zero!")
+
+
+
+
+
+
+    def __str__(self) -> str:
+        s = ""
+        for index,layer in enumerate(self.nodeLayers):
+            s += "LAYER NUMBER: " + str(index) + "\n"
+            s += str(layer) + "\n"
+        return s
+    
+
+    def CalculateGradient(self, desiredOutput: np.ndarray, 
+                          calculateZDerivatives: bool = True,
+                          debug: bool = False
+                          ) -> tuple[list[np.ndarray],list[np.ndarray]]:
+        """Calculates the gradient of the cost function with respect to the weights and biases of the network.
+        Takes in a desired output vector.
+        returns biasGradients, weightGradients"""
+        
+        # calculate the z derivatives
+        if calculateZDerivatives: self.CalculateAllZDerivatives(desiredOutput)
+
+        # initialize the gradient lists
+        biasGradients = [np.zeros(layer.numberOfNodes) for layer in self.nodeLayers[:-1]]
+        weightGradients = [np.zeros(layer.weights.shape) for layer in self.nodeLayers[:-1]]
+
+        if debug:
+            print("weight gradients:")
+            print(weightGradients)
+
+        for i in range(len(self.nodeLayers)-1):
+            biasGradients[i] = self.nodeLayers[i+1].zDerivatives # the bias gradient is just the z derivative
+
+            # calculate the weight gradient
+            for ri in range(len(self.nodeLayers[i].weights)):
+                for ci in range(len(self.nodeLayers[i].weights[ri])):
+                    weightGradients[i][ri][ci] = self.nodeLayers[i].activations[ci] * self.nodeLayers[i+1].zDerivatives[ri]
+
+
+        return biasGradients, weightGradients
+    
+    def UpdateWeightsAndBiases(self, biasGradients: list[np.ndarray], weightGradients: list[np.ndarray], learningRate: float, debug:bool = False):
+        """Updates the weights and biases of the network given the bias and weight gradients and a learning rate."""
+        for i in range(len(self.nodeLayers)-1):
+            if debug:
+                print("bias gradients:")
+                print(biasGradients[i])
+                print("weight gradients:")
+                print(weightGradients[i])
+                print("biases:")
+                print(self.nodeLayers[i].biases)
+                print("weights:")
+                print(self.nodeLayers[i].weights)
+            self.nodeLayers[i].biases -= learningRate * biasGradients[i]
+            self.nodeLayers[i].weights -= learningRate * weightGradients[i]
+
+
+    def TrainNetwork(self, 
+                     inputlist: list[np.ndarray], 
+                     desiredOutputlist: list[np.ndarray], 
+                     learningRate: float, 
+                     trainigSetSize: int = 10, 
+                     maxTrainingSets: int = 100,
+                     log: bool = True,
+                     flattenInput: bool = False # whether or not to flatten the input matrix
+                     ):
+        
+        """Trains the network on a list of input vectors and a list of desired output vectors."""
+
+        counter = 0
+
+        AverageBiasGradient = [np.zeros(layer.biases.shape) for layer in self.nodeLayers[:-1]]
+        AverageWeightGradients = [np.zeros(layer.weights.shape) for layer in self.nodeLayers[:-1]]
+
+        while counter < maxTrainingSets:
+            # for each training set
+            for i in range(trainigSetSize):
+
+                # run the network and calculate the gradient
+                self.RunNetwork(inputlist[i].flatten() if flattenInput else inputlist[i])
+                if log: print("Attempt" + str(counter) + "cost:" + str(self.CalculateCost(desiredOutputlist[i])))
+                calculatedBiasGradient, calculatedWeightGradient = self.CalculateGradient(desiredOutputlist[i])
+
+                # add the calculated gradients to the average gradients
+                for j in range(len(self.nodeLayers)-1):
+                    # print(AverageBiasGradient[j])
+                    # print("...")
+                    # print(calculatedBiasGradient[j])
+                    AverageBiasGradient[j] += calculatedBiasGradient[j]
+                    AverageWeightGradients[j] += calculatedWeightGradient[j]
+
+            # divide the average gradients by the training set size
+            for j in range(len(self.nodeLayers)-1):
+                AverageBiasGradient[j] /= trainigSetSize
+                AverageWeightGradients[j] /= trainigSetSize
+            
+            # update the weights and biases
+            self.UpdateWeightsAndBiases(AverageBiasGradient, AverageWeightGradients, learningRate)
+            counter += 1
+
+        
 
     def SaveNetwork(self, folderPath: str = "Models/", fileName: str = "model"):
         """Saves this network to a folder.""" 
@@ -192,16 +331,6 @@ class Network():
                 for weightRowIndex, weightRow in enumerate(layer.weights):
                     for weightColumnIndex, weight in enumerate(weightRow):
                         writer.writerow([layerIndex,weightRowIndex,weightColumnIndex,weight])
-
-
-
-    def __str__(self) -> str:
-        s = ""
-        for index,layer in enumerate(self.nodeLayers):
-            s += "LAYER NUMBER: " + str(index) + "\n"
-            s += str(layer) + "\n"
-        return s
-
 
 def LoadNetwork( 
                 path: str = "Models/model.csv", # the path to the folder containing the network
@@ -301,19 +430,28 @@ def LoadNetwork(
 
 
 
-                
+import getDatasets
 
-
-            
-
-
-
+data = getDatasets.GetImageTrainingData()
 
 n = LoadNetwork()
+networkbefore = str(n)
+n.TrainNetwork(data[0],data[1],0.1,10,59000,flattenInput=True)
+# print("before:")
+# print(networkbefore)
+# print("after:")
+# print(n)
+n.SaveNetwork()
+
+# n = LoadNetwork()
+# n.RunNetwork([0.1,0.1])
+# print(n.outputLayer.activations)
+# n.RunNetwork([0.1,0.9])
+# print(n.outputLayer.activations)
+# n.RunNetwork([0.5,0.5])
+# print(n.outputLayer.activations)
+
 # n = Network([2,3,2])
-n.RunNetwork(np.array([3,5]))
-print(n)
-print(n.CalculateCost(np.array([1,1])))
-# n.SaveNetwork()
+# print(n.outputLayer.zDerivatives)
 
 
