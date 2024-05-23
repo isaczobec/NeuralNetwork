@@ -2,7 +2,6 @@ import datasets
 import numpy as np
 
 # Load the dataset
-dataset = datasets.load_dataset("mnist")
 
 
 def GetImageTrainingData(
@@ -11,6 +10,7 @@ def GetImageTrainingData(
         shuffleData: bool = False
         ):
     # Access the training data
+    dataset = datasets.load_dataset("mnist")
     train_data = dataset[dataSetString]
 
     # shuffle the data

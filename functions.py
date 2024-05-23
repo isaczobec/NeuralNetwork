@@ -12,3 +12,9 @@ def Sigmoid(x) -> float:
 
 def SigmoidDerivative(x) -> float:
     return Sigmoid(x)*(1 - Sigmoid(x))
+
+def ReLU(x) -> float:
+    return max(0, x)
+
+def ReLUDerivative(x) -> float:
+    return 1 if x > 0 else 0
