@@ -1,3 +1,4 @@
+import PIL.Image
 import datasets
 import PIL
 import numpy as np
@@ -6,10 +7,12 @@ import random
 import csv
 import os
 import functions
+import time
+import matplotlib.pyplot as plt
 
 
 
-
+plt.style.use('fivethirtyeight')
     
 
 class NodeLayer():
@@ -19,7 +22,8 @@ class NodeLayer():
     def __init__(self,
                  numberOfNodes: int, # how many nodes this layer has 
                  nextNodeLayer = None, # the next layer in the network. Used to initialize weights for this one
-                 initializeWeightsRandomly = True # whether or not to initialize weights randomly
+                 initializeWeightsRandomly = True, # whether or not to initialize weights randomly
+                 randomizeMultiplier:float = 1, # the multiplier for the random weights
                  ) -> None:
         
         self.numberOfNodes = numberOfNodes
@@ -48,7 +52,7 @@ class NodeLayer():
             for node in range(numberOfNodes):
 
                 if initializeWeightsRandomly:
-                    weightRow.append(random.random() * 2 -1) # generate random weight
+                    weightRow.append((random.random() * 2 -1) * randomizeMultiplier) # generate random weight
                 else:
                     weightRow.append(0) # initialize to 0 if not random
 
@@ -61,7 +65,7 @@ class NodeLayer():
         biasList = []
         for node in range(nextNodeLayer.numberOfNodes):
             if initializeWeightsRandomly:
-                biasList.append(random.random() * 2 - 1) # generate random bias
+                biasList.append((random.random() * 2 - 1) * randomizeMultiplier) # generate random bias
             else:
                 biasList.append(0) # initialize to 0 if not random
 
@@ -154,6 +158,7 @@ class Network():
     def __init__(self,
                  LayerAndNodeList: list[int],
                  initializeWeightsRandomly = True, # whether or not to initialize weights randomly
+                 randomizeMultiplier: float = 1, # the multiplier for the random weights
                  ) -> None:
         
         self.nodeLayers: list[NodeLayer] = []
@@ -164,18 +169,31 @@ class Network():
         self.nodeLayers.append(self.outputLayer)
 
         while len(LayerAndNodeList) > 0:
-            self.nodeLayers.insert(0,NodeLayer(LayerAndNodeList.pop(-1), self.nodeLayers[0], initializeWeightsRandomly = initializeWeightsRandomly))
+            self.nodeLayers.insert(0,NodeLayer(LayerAndNodeList.pop(-1), self.nodeLayers[0], initializeWeightsRandomly = initializeWeightsRandomly, randomizeMultiplier=randomizeMultiplier))
 
 
 
-    def RunNetwork(self, inputVector: np.ndarray) -> np.ndarray: 
+    def RunNetwork(self, inputVector: np.ndarray, 
+                   flattenInput: bool = False,
+                    desiredOutput: np.ndarray = None,
+                   printResult = False,
+                   ) -> np.ndarray: 
         """runs this network and returns an output vector.
         Also sets the activations of the layers and keeps them set."""
+
+        if flattenInput: inputVector = inputVector.flatten()
 
         self.nodeLayers[0].activations = inputVector
 
         for layer in self.nodeLayers[:-1]: # dont run the output layer
             layer.CalcNextActivations()
+
+        if desiredOutput is not None:
+            if printResult: 
+                cost = self.CalculateCost(desiredOutput)
+                print("activations: "+ str(self.outputLayer.activations) + " cost:" + str(cost))
+        elif printResult:
+            print("activations: "+ str(self.outputLayer.activations))
 
         return self.outputLayer.activations
     
@@ -256,42 +274,125 @@ class Network():
                      learningRate: float, 
                      trainigSetSize: int = 10, 
                      maxTrainingSets: int = 100,
+                     epochs: int = 1, # the number of times to run through the training data
+                     shuffleData: bool = True, # whether or not to shuffle the data between epochs
                      log: bool = True,
-                     flattenInput: bool = False # whether or not to flatten the input matrix
+                     flattenInput: bool = False, # whether or not to flatten the input matrix
+                     showdata: bool = False, # whether or not to show the data in the console,
+                     saveDataTo: str = None, # the path to save the data to. Does not save if None
+                     plotDataWhenDone: bool = False, # whether or not to plot the data
                      ):
         
         """Trains the network on a list of input vectors and a list of desired output vectors."""
+
+        # lists to store the counter and cost values for plotting or logging
+        counterVals = []
+        costVals = []
+
+        
+        
 
         counter = 0
 
         AverageBiasGradient = [np.zeros(layer.biases.shape) for layer in self.nodeLayers[:-1]]
         AverageWeightGradients = [np.zeros(layer.weights.shape) for layer in self.nodeLayers[:-1]]
 
-        while counter < maxTrainingSets:
-            # for each training set
-            for i in range(trainigSetSize):
+        for i in range(epochs):
 
-                # run the network and calculate the gradient
-                self.RunNetwork(inputlist[i].flatten() if flattenInput else inputlist[i])
-                if log: print("Attempt" + str(counter) + "cost:" + str(self.CalculateCost(desiredOutputlist[i])))
-                calculatedBiasGradient, calculatedWeightGradient = self.CalculateGradient(desiredOutputlist[i])
+            if shuffleData:
+                # shuffle the data
+                combined = list(zip(inputlist,desiredOutputlist))
+                random.shuffle(combined)
+                inputlist, desiredOutputlist = zip(*combined)
 
-                # add the calculated gradients to the average gradients
+            while counter < maxTrainingSets:
+                # for each training set
+                for i in range(trainigSetSize):
+
+                    # run the network and calculate the gradient
+                    self.RunNetwork(inputlist[i], flattenInput=flattenInput)
+
+
+                    # plot and log the data
+                    cost = None
+                    if log or plotDataWhenDone or saveDataTo != None: cost = self.CalculateCost(desiredOutputlist[i])
+                    # log the data
+                    if log: print("Attempt" + str(counter) + ":" + str(i) + "cost:" + str(cost))
+                    # plot the data
+                    if plotDataWhenDone or saveDataTo != None:
+                        counterVals.append(counter)
+                        costVals.append(cost)
+
+
+                    
+                    if showdata: 
+                        print("result,desired:")
+                        print((self.outputLayer.activations))
+                        print((desiredOutputlist[i]))
+                        plt.imshow(inputlist[i], cmap='gray')
+                        plt.show()
+
+
+                    calculatedBiasGradient, calculatedWeightGradient = self.CalculateGradient(desiredOutputlist[i])
+
+                    # add the calculated gradients to the average gradients
+                    for j in range(len(self.nodeLayers)-1):
+                        # print(AverageBiasGradient[j])
+                        # print("...")
+                        # print(calculatedBiasGradient[j])
+                        AverageBiasGradient[j] += calculatedBiasGradient[j]
+                        AverageWeightGradients[j] += calculatedWeightGradient[j]
+
+                # divide the average gradients by the training set size
                 for j in range(len(self.nodeLayers)-1):
-                    # print(AverageBiasGradient[j])
-                    # print("...")
-                    # print(calculatedBiasGradient[j])
-                    AverageBiasGradient[j] += calculatedBiasGradient[j]
-                    AverageWeightGradients[j] += calculatedWeightGradient[j]
+                    AverageBiasGradient[j] /= trainigSetSize
+                    AverageWeightGradients[j] /= trainigSetSize
+                
+                # update the weights and biases
+                self.UpdateWeightsAndBiases(AverageBiasGradient, AverageWeightGradients, learningRate)
+                counter += 1
 
-            # divide the average gradients by the training set size
-            for j in range(len(self.nodeLayers)-1):
-                AverageBiasGradient[j] /= trainigSetSize
-                AverageWeightGradients[j] /= trainigSetSize
-            
-            # update the weights and biases
-            self.UpdateWeightsAndBiases(AverageBiasGradient, AverageWeightGradients, learningRate)
+        # save the data
+        if saveDataTo != None:
+            try:
+                with open(saveDataTo + ".csv", mode='w') as file:
+                    writer = csv.writer(file)
+                    for i in range(len(counterVals)):
+                        writer.writerow([counterVals[i],costVals[i]])
+            except:
+                print("could not save data to " + saveDataTo)
+
+        if plotDataWhenDone:
+            plt.plot(counterVals,costVals)
+            plt.show()
+    
+    def TestNetwork(
+                    self,
+                    inputlist: list[np.ndarray],
+                    desiredOutputlist: list[np.ndarray],
+                    maxattempts: int = None,
+                    flattenInput: bool = False,
+                    printResult: bool = False,
+                    ):
+        """Tests the network on a list of input vectors and a list of desired output vectors.
+        returns the average cost of the network on the test data."""
+
+
+        # run the network on the test data and calculate the cost, add it to the sum
+        counter = 0
+        costSum = 0
+        for i in range(len(inputlist)):
+            if maxattempts is not None and counter >= maxattempts: break
+            self.RunNetwork(inputlist[i], flattenInput=flattenInput, desiredOutput=desiredOutputlist[i])
+            costSum += self.CalculateCost(desiredOutputlist[i])
             counter += 1
+
+        # calculate the average cost and return it
+        averageCost = costSum / counter
+        if printResult: print("average cost: " + str(averageCost))
+        return averageCost
+        
+
 
         
 
@@ -430,28 +531,141 @@ def LoadNetwork(
 
 
 
-import getDatasets
-
-data = getDatasets.GetImageTrainingData()
-
-n = LoadNetwork()
-networkbefore = str(n)
-n.TrainNetwork(data[0],data[1],0.1,10,59000,flattenInput=True)
-# print("before:")
-# print(networkbefore)
-# print("after:")
-# print(n)
-n.SaveNetwork()
-
+# ------ load --------
+# n = Network([784,16,16,10], randomizeMultiplier=1)
 # n = LoadNetwork()
-# n.RunNetwork([0.1,0.1])
-# print(n.outputLayer.activations)
-# n.RunNetwork([0.1,0.9])
-# print(n.outputLayer.activations)
-# n.RunNetwork([0.5,0.5])
-# print(n.outputLayer.activations)
+# networkbefore = str(n)
 
-# n = Network([2,3,2])
-# print(n.outputLayer.zDerivatives)
+
+# ------ random train --------
+# trainingData = [[random.random(), random.random()] for _ in range(1000)]
+# desiredResults = [[1,1] for _ in range(1000)]
+# n.TrainNetwork(trainingData,desiredResults,0.1,10,999,flattenInput=False)
+
+# timebefore = time.time()
+
+
+# ------ train --------
+# import getDatasets
+# data = getDatasets.GetImageTrainingData()
+
+# n.TrainNetwork(
+#                 data[0],data[1],
+#                learningRate=0.1,
+#                trainigSetSize=10,
+#                maxTrainingSets=5900,
+#                flattenInput=True,
+#                log=True,
+#                 plotDataWhenDone=True
+#                )
+
+# n.SaveNetwork("Models/","test24-23-5:1.csv")
+
+# ------ test --------
+
+# testImage = PIL.Image.open("testImages/test6.png")
+# testImageArray = np.array(testImage)
+# testImageArray = testImageArray[:,:,0]
+# testImageArray = testImageArray * 1/255
+
+# n.RunNetwork(testImageArray,
+#              flattenInput=True,
+#              printResult=True)
+
+# # print the guess
+# max = 0
+# guess = 0
+# for i in range(len(n.outputLayer.activations)):
+#     if n.outputLayer.activations[i] > max: 
+#         max = n.outputLayer.activations[i]
+#         guess = i
+
+# print("guess:" + str(guess))
+
+# plt.imshow(testImageArray, cmap='gray')
+# plt.show()
+    
+
+
+
+
+
+
+# ------ train multiple --------
+
+import getDatasets
+data = getDatasets.GetImageTrainingData(shuffleData=False)
+
+# amountOfnodes = [
+#     [784,16,16,10],
+#     [784,16,16,10],
+#     [784,16,16,10],
+#     [784,16,16,16,10],
+#     [784,16,16,16,10],
+#     [784,16,16,16,10],
+#     [784,16,16,16,16,10],
+#     [784,16,16,16,16,10],
+#     [784,16,16,16,16,10],
+#                  ]
+
+settingsDict = {
+    "test1":{
+            "learningRate":0.1,
+            "trainigSetSize":10,
+            "maxTrainingSets":5900,
+            "epochs":1,
+            "nodeAmount":[784,16,16,10],
+            "randomizeMultiplier":1,
+             },
+    "test2":{
+            "learningRate":0.1,
+            "trainigSetSize":10,
+            "maxTrainingSets":5900,
+            "epochs":1,
+            "nodeAmount":[784,16,16,10],
+            "randomizeMultiplier":1,
+             },
+}
+
+for test,settings in settingsDict.items():
+
+    timebefore = time.time()
+
+    print("start training model " + str(i) + "...")
+
+    n = Network(settings["nodeAmount"], randomizeMultiplier=settings["randomizeMultiplier"])
+    n.TrainNetwork(
+                    data[0],data[1],
+                    learningRate=settings["learningRate"],
+                    trainigSetSize=settings["trainigSetSize"],
+                    maxTrainingSets=5900,
+                    epochs=settings["epochs"],
+                    shuffleData=True,
+                    flattenInput=True,
+                    log=True,
+                    showdata=False,
+                    plotDataWhenDone=False,
+                    saveDataTo="LoggedData/tests24-23-5",
+    )
+
+    n.SaveNetwork("Models/ManyLetterTests/", "test" + str(i))
+
+    print("model " + str(i) + " done training")
+    print("time taken: " + str(time.time()-timebefore) + " seconds")
+
+
+# ------ test multiple --------
+
+# import getDatasets
+# data = getDatasets.GetImageTrainingData(dataSetString='train')
+
+# for i in range(9):
+#     n = LoadNetwork("Models/ManyLetterTests/test" + str(i) + ".csv")
+#     averageCost = n.TestNetwork(data[0],data[1],maxattempts=100,flattenInput=True,printResult=False)
+#     print("model " + str(i) + " average cost: " + str(averageCost))
+
+# n = LoadNetwork("Models/tryNestWOrk.csv")
+# n.TestNetwork(data[0],data[1],maxattempts=100,flattenInput=True,printResult=True)
+
 
 
