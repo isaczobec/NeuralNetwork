@@ -1,0 +1,24 @@
+# settingsDict = {
+#         "poopTest":{
+#                 "LoadNetork":False,
+#                 "learningRate":0.2,
+#                 "trainingSetSize":2,
+#                 "maxTrainingSets":2,
+#                 "epochs":1,
+#                 "nodeAmount":[784,1,1,10],
+#                 "randomizeMultiplier":1,
+#                 "squishingFunction":functions.ReLU,
+#                 "squishingFunctionDerivative":functions.ReLUDerivative,
+#                 },
+#         "Models/tests24-24-5/firstTest":{
+#                 "LoadNetork":True,
+#                 "learningRate":0.2,
+#                 "trainingSetSize":2,
+#                 "maxTrainingSets":2,
+#                 "epochs":1,
+#                 "nodeAmount":[784,3,3,10],
+#                 "randomizeMultiplier":1,
+#                 "squishingFunction":functions.ReLU,
+#                 "squishingFunctionDerivative":functions.ReLUDerivative,
+#                 },
+#     }

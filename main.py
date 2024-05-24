@@ -282,8 +282,8 @@ class Network():
                      inputlist: list[np.ndarray], 
                      desiredOutputlist: list[np.ndarray], 
                      learningRate: float, 
-                     trainigSetSize: int = 10, 
-                     maxTrainingSets: int = 100,
+                     trainingSetSize: int = 10, 
+                     maxTrainingSets: int = None, # the number of training sets to run through. If None, runs through all of them
                      epochs: int = 1, # the number of times to run through the training data
                      shuffleData: bool = True, # whether or not to shuffle the data between epochs
                      log: bool = True,
@@ -291,9 +291,31 @@ class Network():
                      showdata: bool = False, # whether or not to show the data in the console,
                      saveLogTo: str = None, # the path to save the data to. Does not save if None
                      plotDataWhenDone: bool = False, # whether or not to plot the data
+                     settingsDict: dict[str,any] = None, # a dictionary containing the settings for the network
                      ):
-        
         """Trains the network on a list of input vectors and a list of desired output vectors."""
+        
+        if settingsDict != None:
+            tmpLearningRate = learningRate
+            tmpTrainingSetSize = trainingSetSize
+            tmpMaxTrainingSets = maxTrainingSets
+            tmpEpochs = epochs
+
+            try:
+                learningRate = settingsDict["learningRate"]
+                trainingSetSize = settingsDict["trainingSetSize"]
+                maxTrainingSets = settingsDict["maxTrainingSets"]
+                epochs = settingsDict["epochs"]
+            except:
+                print("could not load settings from settingsDict")
+                learningRate = tmpLearningRate
+                trainingSetSize = tmpTrainingSetSize
+                maxTrainingSets = tmpMaxTrainingSets
+                epochs = tmpEpochs
+        
+        # if maxTrainingSets is None, set it to the length of the input list divided by the training set size (floored to prevent errors)
+        if maxTrainingSets == None:
+            maxTrainingSets = len(inputlist) // trainingSetSize
 
         # lists to store the counter and cost values for plotting or logging
         counterVals = []
@@ -325,7 +347,7 @@ class Network():
 
 
                 # START TRAINING SET
-                for i in range(trainigSetSize):
+                for i in range(trainingSetSize):
 
                     # run the network and calculate the gradient
                     self.RunNetwork(inputlist[exampleCounter], flattenInput=flattenInput)
@@ -336,7 +358,7 @@ class Network():
                     cost = None
                     if log or plotDataWhenDone or saveLogTo != None: cost = self.CalculateCost(desiredOutputlist[exampleCounter])
                     # log the data
-                    if log: print("e:"+str(ei)+", trainingSet: " + str(SetCounter) + ", nr:" + str(i) + ", cost:" + str(cost))
+                    if log: print("e:"+str(ei+1)+ "/" + str(epochs) + ", trainingSet: " + str(SetCounter+1) + "/" + str(maxTrainingSets) + ", nr:" + str(i + 1) + "/" + str(trainingSetSize) + ", cost:" + str(cost))
                     # plot the data
                     if plotDataWhenDone or saveLogTo != None:
                         counterVals.append(counter)
@@ -370,8 +392,8 @@ class Network():
 
                 # divide the average gradients by the training set size
                 for j in range(len(self.nodeLayers)-1):
-                    AverageBiasGradient[j] /= trainigSetSize
-                    AverageWeightGradients[j] /= trainigSetSize
+                    AverageBiasGradient[j] /= trainingSetSize
+                    AverageWeightGradients[j] /= trainingSetSize
                 
                 # update the weights and biases
                 self.UpdateWeightsAndBiases(AverageBiasGradient, AverageWeightGradients, learningRate)
@@ -398,10 +420,17 @@ class Network():
                     maxattempts: int = None,
                     flattenInput: bool = False,
                     printResult: bool = False,
+
+                    showStandardDeviation: bool = True,
+
+                    ShowRightPercent: bool = True,
                     ):
         """Tests the network on a list of input vectors and a list of desired output vectors.
         returns the average cost of the network on the test data."""
 
+        costList = []
+
+        amountRight = 0
 
         # run the network on the test data and calculate the cost, add it to the sum
         counter = 0
@@ -409,12 +438,47 @@ class Network():
         for i in range(len(inputlist)):
             if maxattempts is not None and counter >= maxattempts: break
             self.RunNetwork(inputlist[i], flattenInput=flattenInput, desiredOutput=desiredOutputlist[i])
-            costSum += self.CalculateCost(desiredOutputlist[i])
+            calcCost = self.CalculateCost(desiredOutputlist[i])
+            if showStandardDeviation: costList.append(calcCost)
+            costSum += calcCost
             counter += 1
+
+            max = 0
+            guess = 0
+            desired = 0
+            for k in range(len(self.outputLayer.activations)):
+                if self.outputLayer.activations[k] > max: 
+                    max = self.outputLayer.activations[k]
+                    guess = k
+
+                if desiredOutputlist[i][k] > 0: desired = k
+
+            # debug prints
+            # print("guess: " + str(self.outputLayer.activations) + "desired: " + str(desiredOutputlist[i]))
+            # print("guess: " + str(guess) + "desired: " + str(desired))
+            
+            if guess == desired: amountRight += 1
+
+            
+
+
 
         # calculate the average cost and return it
         averageCost = costSum / counter
         if printResult: print("average cost: " + str(averageCost))
+
+        if showStandardDeviation:
+            deviationSum = 0
+
+            for c in costList:
+                deviationSum += (c - averageCost)**2
+
+            deviationSum /= len(costList)
+            deviation = math.sqrt(deviationSum)
+            if printResult: print("standard deviation: " + str(deviation))
+    
+        if ShowRightPercent: print("percent right: " + str(round((amountRight/counter) * 100,2)) + "%")
+
         return averageCost
         
 
@@ -558,7 +622,7 @@ def LoadNetwork(
 
 # ------ load --------
 # n = Network([784,16,16,10], randomizeMultiplier=1)
-# n = LoadNetwork()
+# n = LoadNetwork("Models/tests24-24-5/testMoreNodes1.csv")
 # networkbefore = str(n)
 
 
@@ -577,40 +641,41 @@ def LoadNetwork(
 # n.TrainNetwork(
 #                 data[0],data[1],
 #                learningRate=0.1,
-#                trainigSetSize=10,
+#                trainingSetSize=10,
 #                maxTrainingSets=5900,
 #                flattenInput=True,
 #                log=True,
-#                 plotDataWhenDone=True
+#                 plotDataWhenDone=True,
+#                 showdata=True,
 #                )
 
 # n.SaveNetwork("Models/","test24-23-5:1.csv")
 
 # ------ test --------
 
-n = LoadNetwork("Models/tests5-23-24/testNormal.csv")
+# n = LoadNetwork("Models/tests5-23-24/testNormal.csv")
 
-testImage = PIL.Image.open("testImages/test4.png")
-testImageArray = np.array(testImage)
-testImageArray = testImageArray[:,:,0]
-testImageArray = testImageArray * 1/255
+# testImage = PIL.Image.open("testImages/test4.png")
+# testImageArray = np.array(testImage)
+# testImageArray = testImageArray[:,:,0]
+# testImageArray = testImageArray * 1/255
 
-n.RunNetwork(testImageArray,
-             flattenInput=True,
-             printResult=True)
+# n.RunNetwork(testImageArray,
+#              flattenInput=True,
+#              printResult=True)
 
-# print the guess
-max = 0
-guess = 0
-for i in range(len(n.outputLayer.activations)):
-    if n.outputLayer.activations[i] > max: 
-        max = n.outputLayer.activations[i]
-        guess = i
+# # print the guess
+# max = 0
+# guess = 0
+# for i in range(len(n.outputLayer.activations)):
+#     if n.outputLayer.activations[i] > max: 
+#         max = n.outputLayer.activations[i]
+#         guess = i
 
-print("guess:" + str(guess))
+# print("guess:" + str(guess))
 
-plt.imshow(testImageArray, cmap='gray')
-plt.show()
+# plt.imshow(testImageArray, cmap='gray')
+# plt.show()
     
 
 
@@ -623,98 +688,132 @@ plt.show()
 def TrainMultiple(
         testSpecDict: dict[str,dict[str,any]], # a dictionary containing the specifications for the networks to be trained
         data: list[list,list] = None, # the training data
+        saveNetworkToDirectory: str = "Models/", # the directory to save the networks to
+        saveLogToDirectory: str = "LoggedData/", # the directory to save the logs to. If none, goes direcly to the path of the name of the test
+        log: bool = True, # whether or not to log the data
 ):
-
-
-    # amountOfnodes = [
-    #     [784,16,16,10],
-    #     [784,16,16,10],
-    #     [784,16,16,10],
-    #     [784,16,16,16,10],
-    #     [784,16,16,16,10],
-    #     [784,16,16,16,10],
-    #     [784,16,16,16,16,10],
-    #     [784,16,16,16,16,10],
-    #     [784,16,16,16,16,10],
-    #                  ]
-
-    
     for test,settings in testSpecDict.items():
 
         timebefore = time.time()
 
+        print("") # newline
         print("start training model " + str(test) + "...")
 
-        n = Network(
-            settings["nodeAmount"], 
-            randomizeMultiplier=settings["randomizeMultiplier"],
-            squishingFunction=settings["squishingFunction"],
-            squishingFunctionDerivative=settings["squishingFunctionDerivative"],
-            )
+        # init the network
+        if settings["LoadNetork"] == False: # create a new network
+            n = Network(
+                settings["nodeAmount"], 
+                randomizeMultiplier=settings["randomizeMultiplier"],
+                squishingFunction=settings["squishingFunction"],
+                squishingFunctionDerivative=settings["squishingFunctionDerivative"],
+                )
+            
+            fileName = test
+
+        else: # load a network
+            n = LoadNetwork(test + ".csv")
+
+            fileName = test.split("/")[-1]
+
+
+        
+        
         n.TrainNetwork(
                         data[0],data[1],
                         learningRate=settings["learningRate"],
-                        trainigSetSize=settings["trainigSetSize"],
+                        trainingSetSize=settings["trainingSetSize"],
                         maxTrainingSets=settings["maxTrainingSets"],
                         epochs=settings["epochs"],
                         shuffleData=True,
                         flattenInput=True,
-                        log=True,
+                        log=log,
                         showdata=False,
                         plotDataWhenDone=False,
-                        saveLogTo="LoggedData/tests24-23-5/" + test,
+                        saveLogTo=saveLogToDirectory + fileName,
         )
 
-        n.SaveNetwork("Models/tests5-23-24/", test)
+
+        if settings["LoadNetork"] == False: # save the network if it was created in this function
+
+            if saveNetworkToDirectory != None:
+                n.SaveNetwork(saveNetworkToDirectory, test)
+            else:
+                n.SaveNetwork("./",test)
+
+        else:
+            n.SaveNetwork("./",test)
 
         print("model " + str(test) + " done training")
         print("time taken: " + str(time.time()-timebefore) + " seconds")
 
+        print("") # newline
 
     # ------ test multiple --------
 
-    # import getDatasets
-    # data = getDatasets.GetImageTrainingData(dataSetString='train')
+def TestMultiple(
+        
+        modelDirectories: list[str], # a list of directories containing the models to be tested
+        data: list[list,list], # the training data [inputlist,desiredOutputlist]
+        attempts: int = 100, # the number of attempts to test each model
+        flattenInput: bool = False, # whether or not to flatten the input matrix
+        printOutput: bool = True, # whether or not to print the output
+):
 
-    # for i in range(9):
-    #     n = LoadNetwork("Models/ManyLetterTests/test" + str(i) + ".csv")
-    #     averageCost = n.TestNetwork(data[0],data[1],maxattempts=100,flattenInput=True,printResult=False)
-    #     print("model " + str(i) + " average cost: " + str(averageCost))
+    print("") # newline
 
-    # n = LoadNetwork("Models/tryNestWOrk.csv")
-    # n.TestNetwork(data[0],data[1],maxattempts=100,flattenInput=True,printResult=True)
-
-
+    for i in range(len(modelDirectories)):
+        n = LoadNetwork(modelDirectories[i] + ".csv")
+        print("model: " + modelDirectories[i] + ":")
+        n.TestNetwork(data[0],data[1],maxattempts=attempts,flattenInput=flattenInput,printResult=printOutput)
+        print("") # newline
 
 
-settingsDict = {
-        "testNormal2":{
-                "learningRate":0.1,
-                "trainigSetSize":10,
-                "maxTrainingSets":5995,
-                "epochs":2,
-                "nodeAmount":[784,16,16,10],
-                "randomizeMultiplier":1,
-                "squishingFunction":functions.ReLU,
-                "squishingFunctionDerivative":functions.ReLUDerivative,
-                },
-        "testMoreNodes":{
-                "learningRate":0.1,
-                "trainigSetSize":10,
-                "maxTrainingSets":5995,
-                "epochs":2,
-                "nodeAmount":[784,89,44,22,10],
-                "randomizeMultiplier":1,
-                "squishingFunction":functions.ReLU,
-                "squishingFunctionDerivative":functions.ReLUDerivative,
-                },
-    }
+
+# _______________________
+
+
+# --- train multiple ---
+
+# settingsDict = {
+#         "Models/tests24-24-5/testMoreNodes1":{
+#                 "LoadNetork":True,
+#                 "learningRate":0.1,
+#                 "trainingSetSize":100,
+#                 "maxTrainingSets":None,
+#                 "epochs":3,
+#                 "nodeAmount":[784,32,16,10],
+#                 "randomizeMultiplier":1,
+#                 "squishingFunction":functions.ReLU,
+#                 "squishingFunctionDerivative":functions.ReLUDerivative,
+#                 },
+#     }
+
 
 # data = getDatasets.GetImageTrainingData(shuffleData=False)
 
 # TrainMultiple(
 #     settingsDict,
 #     data,
+#     saveNetworkToDirectory="Models/tests24-24-5/",
+#     saveLogToDirectory="LoggedData/tests24-24-5/",
+#     log=True
 #     )
 
 
+
+
+
+# ------ test multiple -------
+
+data = getDatasets.GetImageTrainingData(shuffleData=False, dataSetString='test')
+
+networksToTest = [
+    "Models/tests24-24-5/firstTest",
+]
+
+TestMultiple(
+    networksToTest,
+    data,
+    attempts=800,
+    flattenInput=True
+    )
